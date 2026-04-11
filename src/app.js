@@ -151,20 +151,30 @@ const checkServiceConnections = async () => {
     };
 
     try {
-      try {
-        const dbManagerResult = await tryDbManager(DB_MANAGER_LOCAL_URL);
-        console.log('✅ Connected to local DB Manager on port ' + process.env.DB_MANAGER_PORT || 3007);
-        console.log('   📊 DB Manager Status:', dbManagerResult.data.status);
-        console.log('   🗄️  Database Status:', dbManagerResult.data.databases?.sqlite?.status || 'Unknown');
-        logger.info(`✅ DB Manager is connected locally`);
-      } catch (localError) {
-        console.warn('⚠️ Local DB Manager failed, switching to remote DB Manager URL:', DB_MANAGER_REMOTE_URL);
-        logger.warn(`⚠️ Local DB Manager connection failed, switching to fallback URL ${DB_MANAGER_REMOTE_URL}`);
+      // Skip local connection if USE_REMOTE_DB is set to true
+      if (process.env.USE_REMOTE_DB === 'true') {
+        console.log('🔄 USE_REMOTE_DB is true, skipping local DB Manager connection');
         const dbManagerResult = await tryDbManager(DB_MANAGER_REMOTE_URL);
-        console.log('✅ Connected to DB Manager via remote fallback');
+        console.log('✅ Connected to DB Manager via remote URL');
         console.log('   📊 DB Manager Status:', dbManagerResult.data.status);
         console.log('   🗄️  Database Status:', dbManagerResult.data.databases?.sqlite?.status || 'Unknown');
-        logger.info(`✅ DB Manager connected via remote fallback URL ${DB_MANAGER_REMOTE_URL}`);
+        logger.info(`✅ DB Manager connected via remote URL ${DB_MANAGER_REMOTE_URL}`);
+      } else {
+        try {
+          const dbManagerResult = await tryDbManager(DB_MANAGER_LOCAL_URL);
+          console.log('✅ Connected to local DB Manager on port ' + process.env.DB_MANAGER_PORT || 3007);
+          console.log('   📊 DB Manager Status:', dbManagerResult.data.status);
+          console.log('   🗄️  Database Status:', dbManagerResult.data.databases?.sqlite?.status || 'Unknown');
+          logger.info(`✅ DB Manager is connected locally`);
+        } catch (localError) {
+          console.warn('⚠️ Local DB Manager failed, switching to remote DB Manager URL:', DB_MANAGER_REMOTE_URL);
+          logger.warn(`⚠️ Local DB Manager connection failed, switching to fallback URL ${DB_MANAGER_REMOTE_URL}`);
+          const dbManagerResult = await tryDbManager(DB_MANAGER_REMOTE_URL);
+          console.log('✅ Connected to DB Manager via remote fallback');
+          console.log('   📊 DB Manager Status:', dbManagerResult.data.status);
+          console.log('   🗄️  Database Status:', dbManagerResult.data.databases?.sqlite?.status || 'Unknown');
+          logger.info(`✅ DB Manager connected via remote fallback URL ${DB_MANAGER_REMOTE_URL}`);
+        }
       }
     } catch (error) {
       services.db_manager.connected = false;
@@ -187,6 +197,45 @@ const checkServiceConnections = async () => {
     logger.error('Error checking service connections:', error.message);
   }
 };
+
+// Continuous DB Manager connection retry
+const startDbManagerRetry = () => {
+  if (services.db_manager.connected) return; // Already connected
+
+  const retryInterval = setInterval(async () => {
+    if (services.db_manager.connected) {
+      clearInterval(retryInterval);
+      return;
+    }
+
+    try {
+      console.log('🔄 Retrying DB Manager connection...');
+      const url = process.env.USE_REMOTE_DB === 'true' ? DB_MANAGER_REMOTE_URL : DB_MANAGER_LOCAL_URL;
+      const result = await checkWithRetry('DB Manager', url);
+      
+      dbManagerUrl = url;
+      services.db_manager.url = url;
+      services.db_manager.connected = true;
+      services.db_manager.fallbackUsed = url !== DB_MANAGER_LOCAL_URL;
+      dbManagerFallbackUsed = services.db_manager.fallbackUsed;
+      
+      console.log('✅ DB Manager reconnected successfully');
+      logger.info(`✅ DB Manager reconnected via ${url}`);
+      
+      clearInterval(retryInterval);
+    } catch (error) {
+      console.log('❌ DB Manager retry failed, will try again in 5 seconds');
+    }
+  }, 5000); // Retry every 5 seconds
+};
+
+// Start the retry mechanism if DB Manager is not connected
+setTimeout(() => {
+  if (!services.db_manager.connected) {
+    console.log('🚀 Starting DB Manager connection retry mechanism');
+    startDbManagerRetry();
+  }
+}, 10000); // Start retry after 10 seconds
 
 // Initialize Socket.IO connection to DB Manager
 const initializeSocketConnection = () => {
