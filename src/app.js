@@ -403,6 +403,36 @@ app.get(`${apiPrefix}/game/latest-data`, async (req, res) => {
       const gameData = grpcResult.data;
       console.log(`✅ Stage4: gRPC game data retrieved for Stage ${stage.toUpperCase()}:`, gameData);
 
+      // Check if it's fallback data (no real game)
+      if (gameData.gameId && gameData.gameId.startsWith('FALLBACK')) {
+        console.log(`🔄 Stage4: Fallback data detected, creating new empty game for Stage ${stage.toUpperCase()}`);
+        const newGameData = await createNewGameForStage(stage.toLowerCase());
+        
+        // Format response for frontend
+        const formattedResponse = {
+          gameId: newGameData.gameId,
+          payout: newGameData.payout,
+          players: newGameData.players,
+          boards: newGameData.boards,
+          totalPlayers: newGameData.totalPlayers,
+          stage: newGameData.stage,
+          timestamp: newGameData.timestamp
+        };
+
+        // Cache the formatted response
+        setCachedGameData(stage, formattedResponse);
+
+        console.log(`✅ Stage4: Returning new empty game data for frontend:`, formattedResponse);
+
+        return res.json({
+          success: true,
+          data: formattedResponse,
+          source: 'fallback_created',
+          stage: 'stage4',
+          timestamp: new Date().toISOString()
+        });
+      }
+
       // Parse selectedBoard format: "+251909090909:2,+251909090910:4"
       const parsedData = parseSelectedBoard(gameData.selectedBoard || '');
 
@@ -765,3 +795,28 @@ server.listen(PORT, async () => {
 });
 
 module.exports = { app, server, io };
+
+// Helper function to create a new game when no existing DB data is available
+async function createNewGameForStage(stage) {
+  try {
+    const timestamp = Date.now();
+    const gameId = `G${timestamp.toString().slice(-5)}`;
+
+    console.log(`🎮 Stage4: No existing game data found for Stage ${stage.toUpperCase()}`);
+
+    // Return empty game state - no sample data
+    return {
+      gameId: gameId,
+      payout: 0,
+      players: '',
+      boards: '',
+      totalPlayers: 0,
+      stage: stage.toUpperCase(),
+      timestamp: new Date().toISOString(),
+      message: 'No active game found. Please place bets to start a new game.'
+    };
+  } catch (error) {
+    console.error('❌ Stage4: Error creating empty game response:', error.message);
+    throw error;
+  }
+}
