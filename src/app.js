@@ -57,7 +57,7 @@ let socketConnected = false;
 
 // Simple in-memory cache for game data to reduce DB Manager load
 const gameDataCache = new Map();
-const CACHE_TTL = 30000; // 30 seconds
+const CACHE_TTL = 5000; // 5 seconds (reduced from 30s to prevent stale data)
 
 const getCachedGameData = (stage) => {
   const cached = gameDataCache.get(stage);
@@ -458,7 +458,7 @@ app.get(`${apiPrefix}/game/latest-data`, async (req, res) => {
         const newGameData = await createNewGameForStage(stage.toLowerCase());
         
         // Format response for frontend
-        const formattedResponse = {
+        const formattedResponse = normalizeGameResponse({
           gameId: newGameData.gameId,
           payout: newGameData.payout,
           players: newGameData.players,
@@ -466,7 +466,7 @@ app.get(`${apiPrefix}/game/latest-data`, async (req, res) => {
           totalPlayers: newGameData.totalPlayers,
           stage: newGameData.stage,
           timestamp: newGameData.timestamp
-        };
+        });
 
         // Cache the formatted response
         setCachedGameData(stage, formattedResponse);
@@ -482,11 +482,8 @@ app.get(`${apiPrefix}/game/latest-data`, async (req, res) => {
         });
       }
 
-      // Parse selectedBoard format: "+251909090909:2,+251909090910:4"
-      const parsedData = parseSelectedBoard(gameData.selectedBoard || '');
-
       // Format response for frontend
-      const formattedResponse = {
+      const formattedResponse = normalizeGameResponse({
         gameId: gameData.gameId || '',
         payout: gameData.payout || 0,
         players: parsedData.playerIds,
@@ -494,7 +491,7 @@ app.get(`${apiPrefix}/game/latest-data`, async (req, res) => {
         totalPlayers: parsedData.totalPlayers,
         stage: stage.toUpperCase(),
         timestamp: new Date().toISOString()
-      };
+      });
 
       // Cache the formatted response
       setCachedGameData(stage, formattedResponse);
@@ -846,7 +843,18 @@ server.listen(PORT, async () => {
 
 module.exports = { app, server, io };
 
-// Helper function to create a new game when no existing DB data is available
+// Helper function to normalize response format (ensure strings, not arrays)
+function normalizeGameResponse(gameData) {
+  return {
+    gameId: gameData.gameId || '',
+    payout: gameData.payout || 0,
+    players: Array.isArray(gameData.players) ? gameData.players.join(',') : (gameData.players || ''),
+    boards: Array.isArray(gameData.boards) ? gameData.boards.join(',') : (gameData.boards || ''),
+    totalPlayers: gameData.totalPlayers || 0,
+    stage: gameData.stage || '',
+    timestamp: gameData.timestamp || new Date().toISOString()
+  };
+}
 async function createNewGameForStage(stage) {
   try {
     const timestamp = Date.now();
