@@ -41,7 +41,7 @@ const io = socketIo(server, {
 // Service URLs
 const BIGSERVER_URL = process.env.BIGSERVER_URL || `http://localhost:${process.env.BIGSERVER_PORT || 3000}`;
 const DB_MANAGER_LOCAL_URL = `http://localhost:${process.env.DB_MANAGER_PORT || 3007}`;
-const DB_MANAGER_REMOTE_URL = process.env.DB_MANAGER || 'https://db-manager-1.onrender.com';
+const DB_MANAGER_REMOTE_URL = process.env.DB_MANAGER_URL || 'https://db-manager-1.onrender.com';
 let dbManagerUrl = DB_MANAGER_LOCAL_URL;
 let dbManagerFallbackUsed = false;
 
